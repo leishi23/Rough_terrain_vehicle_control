@@ -77,10 +77,10 @@ try:
 
     settings = world.get_settings()
     settings.synchronous_mode = True  # Enables synchronous mode
-    delta_time = 0.15
+    delta_time = 0.25
     settings.fixed_delta_seconds = delta_time  
     settings.substepping = True
-    settings.max_substep_delta_time = 0.01      # 0.01*50 = 0.5 > 0.15  !!!!!!!!!!!
+    settings.max_substep_delta_time = 0.02      # max_substep_delta_time * max_substeps > delta_time  !!!!!!!!!!!
     settings.max_substeps = 16
     world.apply_settings(settings)
     
@@ -221,11 +221,15 @@ try:
         # carla.Transform(ego_vehicle.get_location() + carla.Location(z=20), carla.Rotation(pitch=-90)))
         
         # to add some noise to foward velocity and steering angle
-        forward_velocity = np.random.normal(2, 0.01)
-        # forward_velocity = np.random.normal(1, 0)
+        forward_velocity = np.random.normal(1, 1)
+        if forward_velocity > 1.75:
+            forward_velocity = 1.75
+        if forward_velocity < 0.75:
+            forward_velocity = 0.75
+            
         ego_vehicle.enable_constant_velocity(carla.Vector3D(x=forward_velocity,y=0,z=0))
         
-        steer += np.random.normal(0, 0.03)
+        steer += np.random.normal(0, 3)
         # steer = np.random.normal(0, 0)
         if steer > 1.0:
             steer = 1.0
@@ -335,11 +339,9 @@ try:
             steer = 0
             reset = 1
             reset_counter += 1
-            # print('reset_position_idx is %s' % reset_position_idx)
             print('Collision!!!')
-            # print('yaw_data is %s' % yaw_data)
             
-        if time_counter >= 15:
+        if time_counter >= 25:
             reset_point = spawn_points[reset_position_idx]
             reset_point.rotation.yaw = random.uniform(0, 360)
             ego_vehicle.set_transform(reset_point)
@@ -347,14 +349,12 @@ try:
             steer = 0
             reset = 1
             reset_counter += 1
-            # print('reset_position_idx is %s' % reset_position_idx)
             print('Time out!!!')
-            # print('yaw_data is %s' % yaw_data)
                         
         if frame%50 == 0:
             print('Collected data frame number is % s' % frame)
         
-        if frame == 1e4:
+        if frame == 1e5:        # time frame number is about ten times of the datapoints number
             break
 
         

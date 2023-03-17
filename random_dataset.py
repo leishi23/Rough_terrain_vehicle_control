@@ -57,9 +57,9 @@ for i in range(num_datapoints):
     data_dict = {"action_input":{"linear_velocity":[], "steer":[]}, "ground_truth":{"collision":[], "location":[], "velocity":[], "yaw":[], "steer":[], "latlong":[], "reset":[]}}
     
     # convert image into array and store for time step 0
-    img = Image.open(os.path.join(img_path, final_img_dir[i]))
-    np_img = np.array(img).tolist()
-    data_dict["image_input"] = np_img
+    # img = Image.open(os.path.join(img_path, final_img_dir[i]))
+    # np_img = np.array(img).tolist()
+    data_dict["image_input"] = os.path.join(img_path, final_img_dir[i])
     
     # store action input for time step 0~7
     for j in range(num_horizon):

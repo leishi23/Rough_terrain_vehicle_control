@@ -60,16 +60,16 @@ class combined_model(nn.Module):
           
         model_output_temp = self.output_model(lstm_out)           # [position x, position y, position z, collision], diff from ground_truth  
                 
-        for i in range(BATCH_SIZE):
-            yaw_data = ground_truth_data[i, 0, 5]      # yaw is from CARLA vehicle transform frame where clockwise is positive. In rotation matrix, yaw is from world frame where counter-clockwise is positive. When reverse the yaw, it's still counter-clockwise.
-            zeros = torch.tensor(0, dtype=torch.float32).to(device)
-            ones = torch.tensor(1, dtype=torch.float32).to(device)
-            temp = torch.stack([torch.cos(yaw_data), -torch.sin(yaw_data), zeros, torch.sin(yaw_data), torch.cos(yaw_data), 
-                    zeros, zeros, zeros, ones])
-            rotmatrix = torch.reshape(temp, (3, 3))
-            model_output_temp_local_position = model_output_temp[i, :, :3]
-            model_output_temp_global_position = torch.matmul(model_output_temp_local_position, rotmatrix)
-            model_output[i, :,:3] = model_output_temp_global_position + ground_truth_data[i, 0, 1:4]     # add the initial position for timestep 0 to the output position 
-            model_output[i, :, 3] = model_output_temp[i, :, 3]
+        yaw_data = ground_truth_data[:, 0, 5]      # yaw is from CARLA vehicle transform frame where clockwise is positive. In rotation matrix, yaw is from world frame where counter-clockwise is positive. When reverse the yaw, it's still counter-clockwise.
+        zeros = torch.zeros(BATCH_SIZE, dtype=torch.float32).to(device)
+        ones = torch.ones(BATCH_SIZE, dtype=torch.float32).to(device)
+        temp = torch.stack([torch.cos(yaw_data), -torch.sin(yaw_data), zeros, torch.sin(yaw_data), torch.cos(yaw_data), 
+                zeros, zeros, zeros, ones])
+        temp_t = torch.transpose(temp, 0, 1)
+        rotmatrix = torch.reshape(temp_t, (BATCH_SIZE, 3, 3))
+        model_output_temp_local_position = model_output_temp[:, :, :3]
+        model_output_temp_global_position = torch.matmul(model_output_temp_local_position, rotmatrix)
+        model_output[:, :,:3] = model_output_temp_global_position + ground_truth_data[:, 0, 1:4].unsqueeze(1)     # add the initial position for timestep 0 to the output position 
+        model_output[:, :, 3] = model_output_temp[:, :, 3]
             
-        return model_output     # [batch_size, horizon+1, 4], horizon+1 is timestep, 4 is [position x, position y, position z, collision]
+        return model_output  # [batch_size, horizon+1, 4], horizon+1 is timestep, 4 is [position x, position y, position z, collision]

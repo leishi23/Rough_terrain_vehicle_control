@@ -1,3 +1,4 @@
+# %%
 from calendar import EPOCH
 import numpy as np
 import torch
@@ -10,6 +11,8 @@ import matplotlib.pyplot as plt
 import random
 import json
 from model import combined_model
+from PIL import Image
+from torchvision import transforms
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -17,13 +20,15 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 BATCH_SIZE = 1
 horizon = 8
 
+# %%
 # to load the dataset from the json file
 datapoint_path = '/home/lshi23/carla_test/data/datapoints/000023f.json'
-with open(datapoint_path, 'rb') as f: data = json.load(f)
+with open(datapoint_path, 'rb') as f:
+    data = json.load(f)
 
-img_data = torch.tensor(data['image_input'], dtype=torch.float32).to(device)/255
-img_data.unsqueeze_(0)
-img_data = img_data.permute(0, 3, 1, 2)
+image_temp_path = data['image_input']
+image_data_temp = Image.open(image_temp_path)
+image_tensor = transforms.ToTensor()(image_data_temp).to(device).unsqueeze_(0)
 
 linear_velocity = torch.tensor(data['action_input']['linear_velocity'], dtype=torch.float32).to(device)
 steer = torch.tensor([i for i in data['action_input']['steer']], dtype=torch.float32).to(device)
@@ -46,15 +51,20 @@ ground_truth_data_temp = np.stack((ground_truth_collision_temp, ground_truth_loc
 ground_truth_data_temp = torch.FloatTensor(ground_truth_data_temp).to(device)
 ground_truth = ground_truth_data_temp.unsqueeze(0)
 
-PATH = '/home/lshi23/mar14.pt'
+# ground_truth[0, :, 1:4] = torch.rand(1, 9, 3)
+# ground_truth[0, :, 5] = torch.rand(1, 9)
+# %%
+# PATH = '/home/lshi23/mar14.pt'
+PATH = '/home/lshi23/carla_test/saved_models/0.607409model.pt'
 
 model = combined_model().to(device)
 model.load_state_dict(torch.load(PATH))
 model.eval()
      
 with torch.no_grad():
-    model_output = model(img_data, action_input, ground_truth, BATCH_SIZE, horizon)
+    model_output = model(image_tensor, action_input, ground_truth, BATCH_SIZE, horizon)
     
 print("model output is: ", model_output[:, :, :2])
 print("linear velocity is: ", linear_velocity)
 print("steer is: ", steer)
+# %%

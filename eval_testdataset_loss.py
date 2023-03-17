@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import random
 import json
 from model import combined_model
+from PIL import Image
+from torchvision import transforms
 
 # hyperparameters
 BATCH_SIZE = 32
@@ -25,7 +27,7 @@ test_datapoints_file_list = data['test']
 test_BATCH_NUM = int(len(test_datapoints_file_list)/BATCH_SIZE)
 # test_BATCH_NUM = 1
 
-PATH = '/home/lshi23/carla_test/combined_model.pt'
+PATH = '/home/lshi23/carla_test/saved_models/0.607409model.pt'
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -49,13 +51,13 @@ for j in range(test_BATCH_NUM):
         image_data = torch.randn(BATCH_SIZE, 3, 96*2, 128*2, device=device)                                 # 3 is RGB channels, 192 is height, 256 is width
         
         for i in range(BATCH_SIZE):
-            # load the data
             datapoint_path = os.path.join(datapoints_folder_path, test_datapoints_file_list[j*BATCH_SIZE+i])
             with open(datapoint_path, 'rb') as f: data = json.load(f)
             
-            image_data_temp = torch.FloatTensor(data['image_input']).to(device)/255                          # [Height, Width, 3(C:channels)]
-            image_data_temp = image_data_temp.permute(2, 0, 1)                                               # [3, Height, Width]
-            image_data[i] = image_data_temp
+            image_temp_path = data['image_input']
+            image_data_temp = Image.open(image_temp_path)
+            image_tensor = transforms.ToTensor()(image_data_temp)
+            image_data[i] = image_tensor.to(device)
             
             # print(datapoint_path)trainer.py
             # img = transforms.ToPILImage()(image_data[i]).convert('RGB')

@@ -3,7 +3,6 @@ import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
-from dataset import carla_rgb
 import os
 import pandas as pd
 import math
