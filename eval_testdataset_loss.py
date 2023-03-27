@@ -14,7 +14,7 @@ from PIL import Image
 from torchvision import transforms
 
 # hyperparameters
-BATCH_SIZE = 32
+BATCH_SIZE = 128
 horizon = 8
 
 # to load the dataset from the json file
@@ -22,12 +22,12 @@ datapoints_folder_path = 'data/datapoints'
 # datapoints_folder_path = '/home/lshi23'
 dataset_split_path = os.path.join('/home/lshi23/carla_test/data', 'dataset_split.json')
 with open(dataset_split_path, 'rb') as f: data = json.load(f)
-test_datapoints_file_list = data['test']
+test_datapoints_file_list = data['training']
 # test_datapoints_file_list = ['000014f.json']
 test_BATCH_NUM = int(len(test_datapoints_file_list)/BATCH_SIZE)
 # test_BATCH_NUM = 1
 
-PATH = '/home/lshi23/carla_test/saved_models/0.607409model.pt'
+PATH = '/home/lshi23/carla_test/saved_models/4.152337model.pt'
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -89,28 +89,20 @@ for j in range(test_BATCH_NUM):
             ground_truth_data[i] = ground_truth_data_temp
             
         with torch.no_grad():
+            model.eval()
             model_output = model(image_data, action_input_data, ground_truth_data, BATCH_SIZE, horizon)
         
-        ground_truth_position = torch.randn(BATCH_SIZE, horizon, 3, device=device)
-        ground_truth_collision = torch.randn(BATCH_SIZE, horizon, device=device)
-        ground_truth_reset = torch.randn(BATCH_SIZE, horizon, device=device)        
-        for i in range(BATCH_SIZE):
-            # load ground truth data
-            datapoint_path = os.path.join(datapoints_folder_path, test_datapoints_file_list[j*BATCH_SIZE+i])
-            with open(datapoint_path, 'rb') as f: data = json.load(f)
-            ground_truth_position_temp = data['ground_truth']['location'][1:horizon+1]          # shape: [horizon, 3]
-            ground_truth_collision_temp = data['ground_truth']['collision'][1:horizon+1]        # shape: [horizon]
-            ground_truth_reset_temp = data['ground_truth']['reset'][1:horizon+1]                # shape: [horizon]
-            ground_truth_position[i] = torch.FloatTensor(ground_truth_position_temp).to(device)
-            ground_truth_collision[i] = torch.FloatTensor(ground_truth_collision_temp).to(device)
-            ground_truth_reset[i] = torch.FloatTensor(ground_truth_reset_temp).to(device)
+        ground_truth_position = ground_truth_data[:, 1:, 1:4]
+        ground_truth_collision = ground_truth_data[:, 1:, 0]
+        ground_truth_reset = ground_truth_data[:, 1:, 9] 
             
-            
-        ground_truth_reset_idx = torch.nonzero(ground_truth_reset, as_tuple=True)[0]
+        # position loss
+        ground_truth_reset_idx = torch.nonzero(ground_truth_reset, as_tuple=False)
         loss_position_pre = 0.5 * torch.square(model_output[:, :, :3] - ground_truth_position)
-        loss_position_pre = torch.sum(loss_position_pre, dim=(1, 2))
+        loss_position_pre = torch.sum(loss_position_pre, dim=(2))
         for idx in ground_truth_reset_idx:
-            loss_position_pre[idx] = 0
+            loss_position_pre[idx[0], idx[1]:] = 0
+        loss_position_pre = torch.sum(loss_position_pre, dim=(1))
         loss_position = loss_position_pre.sum()
         
         loss_cross_entropy = nn.CrossEntropyLoss(reduction='none')

@@ -197,6 +197,7 @@ try:
     location_queue = queue.Queue(maxsize=1)
     vel_queue = queue.Queue(maxsize=1)
     yaw_queue = queue.Queue(maxsize=1)
+    steer_queue = queue.Queue(maxsize=1)
 
     camera01.listen(lambda data: process_img(data, rgb_image_queue))
     IMU.listen(lambda data: process_imu(data, imu_angular_vel_queue))
@@ -221,21 +222,19 @@ try:
         # carla.Transform(ego_vehicle.get_location() + carla.Location(z=20), carla.Rotation(pitch=-90)))
         
         # to add some noise to foward velocity and steering angle
-        forward_velocity = np.random.normal(1, 1)
-        if forward_velocity > 1.75:
-            forward_velocity = 1.75
-        if forward_velocity < 0.75:
-            forward_velocity = 0.75
+        forward_velocity = np.random.normal(2, 1)
+        if forward_velocity > 2.75:
+            forward_velocity = 2.75
+        if forward_velocity < 1.25:
+            forward_velocity = 1.25
             
         ego_vehicle.enable_constant_velocity(carla.Vector3D(x=forward_velocity,y=0,z=0))
         
         steer += np.random.normal(0, 3)
-        # steer = np.random.normal(0, 0)
         if steer > 1.0:
             steer = 1.0
         if steer < -1.0:
             steer = -1.0
-        # print('steer is %s' % steer)
         ego_vehicle.apply_control(carla.VehicleControl(steer=steer))
         
         # Use the actor get() 
@@ -244,6 +243,9 @@ try:
         ego_transform = ego_vehicle.get_transform()
         yaw = ego_transform.rotation.yaw
         yaw_queue.put(yaw)
+        ego_control = ego_vehicle.get_control()
+        ego_steer = ego_control.steer
+        steer_queue.put(ego_steer)
         
         world.tick()
         
@@ -256,19 +258,18 @@ try:
         snapshot = world.get_snapshot()
         delta_seconds = snapshot.timestamp.delta_seconds
         elapsed_seconds = snapshot.timestamp.elapsed_seconds
-        # print('delta_seconds is %s' % delta_seconds)
-        # print('elapsed_seconds is %s' % elapsed_seconds)
 
         try:
             # Get the data once it's received.
             image_data = rgb_image_queue.get()
             z_axis_angular_vel_data = imu_angular_vel_queue.get()       # rad/s
             gnss_data = gnss_queue.get()
-            location_data = location_queue.get()    # float 
-            vel_data = vel_queue.get()      # float
+            location_data = location_queue.get()                        # float 
+            vel_data = vel_queue.get()                                  # float
             lidar_data = lidar_queue.get()
-            yaw_data = yaw_queue.get()      # float
+            yaw_data = yaw_queue.get()                                  # float
             yaw_data_radians = yaw_data * np.pi / 180
+            steer_data = steer_queue.get()                              # float
 
         except queue.Empty:
             print("[Warning] Some sensor data has been missed")
@@ -322,7 +323,7 @@ try:
         yaw_data_radians = -yaw_data_radians  # to convert the coordinate from carla clockwise positive coordinate to our counter-clockwise positive coordinate system
        
         # 1*10 dimension 
-        data_timestamp = [collision, location_data.x, location_data.y, location_data.z, vel_local, yaw_data_radians, z_axis_angular_vel_data, latitude, longitude, reset]
+        data_timestamp = [collision, location_data.x, location_data.y, location_data.z, vel_local, yaw_data_radians, steer_data, latitude, longitude, reset]
         
         # to save the data_timestamp in disk by jason file format 
         json_object = json.dumps(data_timestamp)  
@@ -341,15 +342,15 @@ try:
             reset_counter += 1
             print('Collision!!!')
             
-        if time_counter >= 25:
-            reset_point = spawn_points[reset_position_idx]
-            reset_point.rotation.yaw = random.uniform(0, 360)
-            ego_vehicle.set_transform(reset_point)
-            time_counter = 0
-            steer = 0
-            reset = 1
-            reset_counter += 1
-            print('Time out!!!')
+        # if time_counter >= 75:
+        #     reset_point = spawn_points[reset_position_idx]
+        #     reset_point.rotation.yaw = random.uniform(0, 360)
+        #     ego_vehicle.set_transform(reset_point)
+        #     time_counter = 0
+        #     steer = 0
+        #     reset = 1
+        #     reset_counter += 1
+        #     print('Time out!!!')
                         
         if frame%50 == 0:
             print('Collected data frame number is % s' % frame)

@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 import random
 import json
 from model import combined_model
+from PIL import Image
+from torchvision import transforms
 # %%
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -26,7 +28,7 @@ for file in os.listdir(datapoint_path):
 files.sort()
 # %%
 # PATH = '/home/lshi23/mar14.pt'
-model_path = '/home/lshi23/carla_test/saved_models/0.419257model.pt'
+model_path = '/home/lshi23/carla_test/saved_models/1.071575model.pt'
 
 model = combined_model().to(device)
 model.load_state_dict(torch.load(model_path))
@@ -38,9 +40,9 @@ for f in files[:1]:
     with open(f, 'rb') as fj:
         data = json.load(fj)
 
-    img_data = torch.tensor(data['image_input'], dtype=torch.float32).to(device)/255
-    img_data.unsqueeze_(0)
-    img_data = img_data.permute(0, 3, 1, 2)
+    image_temp_path = data['image_input']
+    image_data_temp = Image.open(image_temp_path)
+    image_tensor = transforms.ToTensor()(image_data_temp)
 
     linear_velocity = torch.tensor(data['action_input']['linear_velocity'], dtype=torch.float32).to(device)
     steer = torch.tensor([i for i in data['action_input']['steer']], dtype=torch.float32).to(device)
@@ -69,7 +71,7 @@ for f in files[:1]:
     # ground_truth[0, 0, 2] = ground_truth_location_y_temp[0]
     # ground_truth[0, 0, 5] = ground_truth_yaw_temp[0]
     with torch.no_grad():
-        model_output, local_pos = model(img_data, action_input, ground_truth, BATCH_SIZE, horizon)
+        model_output, local_pos = model(image_tensor, action_input, ground_truth, BATCH_SIZE, horizon)
     if np.any(ground_truth_reset_temp):
         model_error = -1
         manual_error = -1

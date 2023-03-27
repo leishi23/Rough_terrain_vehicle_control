@@ -31,7 +31,7 @@ image_data_temp = Image.open(image_temp_path)
 image_tensor = transforms.ToTensor()(image_data_temp).to(device).unsqueeze_(0)
 
 linear_velocity = torch.tensor(data['action_input']['linear_velocity'], dtype=torch.float32).to(device)
-steer = torch.tensor([i for i in data['action_input']['steer']], dtype=torch.float32).to(device)
+steer = torch.tensor([-i for i in data['action_input']['steer']], dtype=torch.float32).to(device)
 action_input = torch.stack([linear_velocity, steer], dim=1).to(device).unsqueeze_(0)
 ground_truth_collision_temp = np.array(data['ground_truth']['collision'])
 ground_truth_location_temp = np.array(data['ground_truth']['location'])
@@ -55,7 +55,7 @@ ground_truth = ground_truth_data_temp.unsqueeze(0)
 # ground_truth[0, :, 5] = torch.rand(1, 9)
 # %%
 # PATH = '/home/lshi23/mar14.pt'
-PATH = '/home/lshi23/carla_test/saved_models/0.607409model.pt'
+PATH = '/home/lshi23/carla_test/saved_models/0.647355model.pt'
 
 model = combined_model().to(device)
 model.load_state_dict(torch.load(PATH))

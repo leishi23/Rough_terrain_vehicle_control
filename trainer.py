@@ -17,14 +17,13 @@ import time
 
 # according to the nn.LSTM documentation, I need to set an environment variable here
 os.environ["CUBLAS_WORKSPACE_CONFIG"]=":4096:2"
-# PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:200
 
 # hyperparameters
-LEARNING_RATE = 1e-4
+LEARNING_RATE = 5e-4
 EPOCHS = int(1e7)
-BATCH_SIZE = 64
+BATCH_SIZE = 128
 horizon = 8
-WEIGHT_DECAY = 1e-1
+WEIGHT_DECAY = 1e-3
 
 RED = '\033[91m'
 GREEN = '\033[92m'
@@ -40,8 +39,8 @@ try:
     for file in os.listdir(md_location):
         os.remove(os.path.join(md_location, file))
 
-finally:
-    print("saved models folder is empty now")
+except:
+    print("saved models folder is already empty now")
 
 # to load the dataset from the json file
 datapoints_folder_path = 'data/datapoints'
@@ -91,13 +90,11 @@ for step in range(EPOCHS):
         
         action_input_data = torch.randn(BATCH_SIZE, horizon, 2, device=device)                           # 2 is linear and angular velocity
         ground_truth_data = torch.randn(BATCH_SIZE, horizon+1, 10, device=device)                        # 10 is [collision, location 3, velocity, yaw, angular velocity, latlong 2, reset]
-        image_data = torch.randn(BATCH_SIZE, 3, 96*2, 128*2, device=device)                                 # 3 is RGB channels, 192 is height, 256 is width
+        image_data = torch.randn(BATCH_SIZE, 3, 96*2, 128*2, device=device)                              # 3 is RGB channels, 192 is height, 256 is width
         
-        for i in range(BATCH_SIZE):
-            # load the data
+        for i in range(BATCH_SIZE):     # load ground truth, action input and image data
             datapoint_path = os.path.join(datapoints_folder_path, training_datapoints_file_list[j*BATCH_SIZE+i])
             with open(datapoint_path, 'rb') as f: data = json.load(f)
-            
             image_temp_path = data['image_input']
             image_data_temp = Image.open(image_temp_path)
             image_tensor = transforms.ToTensor()(image_data_temp)
@@ -132,35 +129,35 @@ for step in range(EPOCHS):
             ground_truth_data_temp = torch.FloatTensor(ground_truth_data_temp).to(device)
             ground_truth_data[i] = ground_truth_data_temp
         
+        # Normalize the input data
+        mean_linear_velocity = torch.mean(action_input_data[:,:,0])
+        mean_steer = torch.mean(action_input_data[:,:,1])
+        mean_image = torch.mean(image_data)
+        std_linear_velocity = torch.std(action_input_data[:,:,0])
+        std_steer = torch.std(action_input_data[:,:,1])
+        std_image = torch.std(image_data)
+        action_input_data[:,:,0] = (action_input_data[:,:,0] - mean_linear_velocity) / std_linear_velocity
+        action_input_data[:,:,1] = (action_input_data[:,:,1] - mean_steer) / std_steer
+        image_data = (image_data - mean_image) / std_image
+        
         model_output = model(image_data, action_input_data, ground_truth_data, BATCH_SIZE, horizon)
         
-        ground_truth_position = torch.randn(BATCH_SIZE, horizon, 3, device=device)
-        ground_truth_collision = torch.randn(BATCH_SIZE, horizon, device=device)
-        ground_truth_reset = torch.randn(BATCH_SIZE, horizon, device=device)        
-        for i in range(BATCH_SIZE):
-            # load ground truth data
-            datapoint_path = os.path.join(datapoints_folder_path, training_datapoints_file_list[j*BATCH_SIZE+i])
-            with open(datapoint_path, 'rb') as f: data = json.load(f)
-            ground_truth_position_temp = data['ground_truth']['location'][1:horizon+1]          # shape: [horizon, 3]
-            ground_truth_collision_temp = data['ground_truth']['collision'][1:horizon+1]        # shape: [horizon]
-            ground_truth_reset_temp = data['ground_truth']['reset'][1:horizon+1]                # shape: [horizon]
-            ground_truth_position[i] = torch.FloatTensor(ground_truth_position_temp).to(device)
-            ground_truth_collision[i] = torch.FloatTensor(ground_truth_collision_temp).to(device)
-            ground_truth_reset[i] = torch.FloatTensor(ground_truth_reset_temp).to(device)
+        ground_truth_position = ground_truth_data[:, 1:, 1:4]
+        ground_truth_collision = ground_truth_data[:, 1:, 0]
+        ground_truth_reset = ground_truth_data[:, 1:, 9]       
             
         # position loss
-        ground_truth_reset_idx = torch.nonzero(ground_truth_reset, as_tuple=True)[0]
+        ground_truth_reset_idx = torch.nonzero(ground_truth_reset, as_tuple=False)
         loss_position_pre = 0.5 * torch.square(model_output[:, :, :3] - ground_truth_position)
-        loss_position_pre = torch.sum(loss_position_pre, dim=(1, 2))
+        loss_position_pre = torch.sum(loss_position_pre, dim=(2))
         for idx in ground_truth_reset_idx:
-            loss_position_pre[idx] = 0
+            loss_position_pre[idx[0], idx[1]:] = 0
+        loss_position_pre = torch.sum(loss_position_pre, dim=(1))
         loss_position = loss_position_pre.sum()
         
         # collision loss
         loss_cross_entropy = nn.CrossEntropyLoss(reduction='none')
         loss_collision = loss_cross_entropy(model_output[:, :, 3], ground_truth_collision)
-        for idx in ground_truth_reset_idx:
-            loss_collision[idx] = 0
         loss_collision = loss_collision.sum()
         
         # L2 regularization loss
@@ -176,7 +173,6 @@ for step in range(EPOCHS):
         
         optimizer.step()
 
-        # print('Epoch:', step, ' Batch:', j,' training loss:', float(loss.item())/BATCH_SIZE)
     
     loss_epoch = loss_epoch / (training_BATCH_NUM*BATCH_SIZE)
     loss_position_epoch = loss_position_epoch / (training_BATCH_NUM*BATCH_SIZE)
@@ -194,23 +190,24 @@ for step in range(EPOCHS):
     current_time = time.strftime("%H:%M:%S", t)
     
     print()
-    print(GREEN + current_time + RESET,'Epoch:', step, YELLOW + ' Total ' + RESET, 'training loss:         ', CYAN + str(loss_epoch)[:8] + RESET)
-    print(GREEN + current_time + RESET,'Epoch:', step, YELLOW + ' Position' + RESET, ' training loss:      ', CYAN + str(loss_position_epoch)[:8] + RESET)
-    print(GREEN + current_time + RESET,'Epoch:', step, YELLOW + ' Collision' + RESET, ' training loss:     ', CYAN + str(loss_collision_epoch)[:8] + RESET)
-    print(GREEN + current_time + RESET,'Epoch:', step, YELLOW + ' L2 regulation' + RESET, ' training loss: ', CYAN + str(loss_l2_regulation_epoch)[:8] + RESET)
+    print(GREEN + current_time + RESET,'| Epoch:', step, ' |', YELLOW + ' Total ' + RESET, 'training loss:         ', CYAN + str(loss_epoch)[:8] + RESET)
+    print(GREEN + current_time + RESET,'| Epoch:', step, ' |', YELLOW + ' Position' + RESET, ' training loss:      ', CYAN + str(loss_position_epoch)[:8] + RESET)
+    print(GREEN + current_time + RESET,'| Epoch:', step, ' |', YELLOW + ' Collision' + RESET, ' training loss:     ', CYAN + str(loss_collision_epoch)[:8] + RESET)
+    print(GREEN + current_time + RESET,'| Epoch:', step, ' |', YELLOW + ' L2 regulation' + RESET, ' training loss: ', CYAN + str(loss_l2_regulation_epoch)[:8] + RESET)
     torch.save(model.state_dict(), '/home/lshi23/carla_test/saved_models/%06fmodel.pt' %loss_epoch)
     
     
     # test the model
     test_loss_epoch = 0.0
+    test_loss_position_epoch = 0.0
+    test_loss_collision_epoch = 0.0
     for i in range(test_BATCH_NUM):
         
         action_input_data = torch.randn(BATCH_SIZE, horizon, 2, device=device)                           # 2 is linear and angular velocity
         ground_truth_data = torch.randn(BATCH_SIZE, horizon+1, 10, device=device)                        # 10 is [collision, location 3, velocity, yaw, angular velocity, latlong 2, reset]
         image_data = torch.randn(BATCH_SIZE, 3, 96*2, 128*2, device=device)                                 # 3 is RGB channels, 192 is height, 256 is width
         
-        for j in range(BATCH_SIZE):
-            # load the data
+        for j in range(BATCH_SIZE):             # load the data
             datapoint_path = os.path.join(datapoints_folder_path, test_datapoints_file_list[i*BATCH_SIZE+j])
             with open(datapoint_path, 'rb') as f: data = json.load(f)
             
@@ -227,6 +224,7 @@ for step in range(EPOCHS):
                 
             linear_velocity_temp = np.array(data['action_input']['linear_velocity'])
             steer_temp = np.array(data['action_input']['steer'])
+            
             action_input_data_temp = np.stack((linear_velocity_temp, steer_temp), axis=1)
             action_input_data[j] = torch.FloatTensor(action_input_data_temp).to(device)
             
@@ -248,30 +246,33 @@ for step in range(EPOCHS):
             ground_truth_data_temp = torch.FloatTensor(ground_truth_data_temp).to(device)
             ground_truth_data[j] = ground_truth_data_temp
         
+        # Normalize the input data
+        mean_linear_velocity = torch.mean(action_input_data[:,:,0])
+        mean_steer = torch.mean(action_input_data[:,:,1])
+        mean_image = torch.mean(image_data)
+        std_linear_velocity = torch.std(action_input_data[:,:,0])
+        std_steer = torch.std(action_input_data[:,:,1])
+        std_image = torch.std(image_data)
+        action_input_data[:,:,0] = (action_input_data[:,:,0] - mean_linear_velocity) / std_linear_velocity
+        action_input_data[:,:,1] = (action_input_data[:,:,1] - mean_steer) / std_steer
+        image_data = (image_data - mean_image) / std_image
+        
         with torch.no_grad():
             model.eval()
             test_model_output = model(image_data, action_input_data, ground_truth_data, BATCH_SIZE, horizon)                                        # shape: [BATCH_SIZE, horizon, 4
         model.train()
     
-        test_ground_truth_position = torch.randn(BATCH_SIZE, horizon, 3, device=device)
-        test_ground_truth_collision = torch.randn(BATCH_SIZE, horizon, device=device)
-        test_ground_truth_reset = torch.randn(BATCH_SIZE, horizon, device=device)      
-        for j in range(BATCH_SIZE):
-            # load ground truth data
-            datapoint_path = os.path.join(datapoints_folder_path, test_datapoints_file_list[i*BATCH_SIZE+j])
-            with open(datapoint_path, 'rb') as f: data = json.load(f)
-            test_ground_truth_position_temp = data['ground_truth']['location'][1:horizon+1]          # shape: [horizon, 3]
-            test_ground_truth_collision_temp = data['ground_truth']['collision'][1:horizon+1]        # shape: [horizon]
-            test_ground_truth_reset_temp = data['ground_truth']['reset'][1:horizon+1]                # shape: [horizon]
-            test_ground_truth_position[j] = torch.FloatTensor(test_ground_truth_position_temp).to(device)
-            test_ground_truth_collision[j] = torch.FloatTensor(test_ground_truth_collision_temp).to(device)
-            test_ground_truth_reset[j] = torch.FloatTensor(test_ground_truth_reset_temp).to(device)
-
-        test_ground_truth_reset_idx = torch.nonzero(test_ground_truth_reset, as_tuple=True)[0]
+        test_ground_truth_position = ground_truth_data[:, 1:, 1:4]
+        test_ground_truth_collision = ground_truth_data[:, 1:, 0]
+        test_ground_truth_reset = ground_truth_data[:, 1:, 9]     
+        
+        # position loss
+        test_ground_truth_reset_idx = torch.nonzero(test_ground_truth_reset, as_tuple=False)
         test_loss_position_pre = 0.5 * torch.square(test_model_output[:, :, :3] - test_ground_truth_position)
-        test_loss_position_pre = torch.sum(test_loss_position_pre, dim=(1, 2))
+        test_loss_position_pre = torch.sum(test_loss_position_pre, dim=(2))
         for idx in test_ground_truth_reset_idx:
-            test_loss_position_pre[idx] = 0
+            test_loss_position_pre[idx[0], idx[1]:] = 0
+        test_loss_position_pre = torch.sum(test_loss_position_pre, dim=(1))
         test_loss_position = test_loss_position_pre.sum()
         
         if step > 3000: print('test loss is', test_loss_position.item())
@@ -281,9 +282,13 @@ for step in range(EPOCHS):
 
         test_loss = (test_loss_position + test_loss_collision)
         test_loss_epoch += float(test_loss.item())
+        test_loss_position_epoch += float(test_loss_position.item())
+        test_loss_collision_epoch += float(test_loss_collision.item())
         
         
     test_loss_epoch = test_loss_epoch / (test_BATCH_NUM*BATCH_SIZE)
+    test_loss_position_epoch = test_loss_position_epoch / (test_BATCH_NUM*BATCH_SIZE)
+    test_loss_collision_epoch = test_loss_collision_epoch / (test_BATCH_NUM*BATCH_SIZE)
     loss_plot(test_loss_epoch, test_loss_queue)
     test_loss_data = test_loss_queue.get()
     test_loss_plot_list.append(test_loss_data)
@@ -292,12 +297,9 @@ for step in range(EPOCHS):
     plt.tight_layout()
     plt.pause(0.001)
     
-    print(GREEN + current_time + RESET, 'Epoch:', step, YELLOW + ' Test' + RESET, ' loss:', CYAN + str(test_loss_epoch)[:8] + RESET)
-    
-        
-
-    if step > 1000 and loss < 0.15:
-        print('pause training, loss is', loss)
+    print(GREEN + current_time + RESET,'| Epoch:', step, ' |', YELLOW + ' Total' + RESET, 'test loss:              ', CYAN + str(test_loss_epoch)[:8] + RESET)
+    print(GREEN + current_time + RESET,'| Epoch:', step, ' |', YELLOW + ' Position' + RESET, ' test loss:          ', CYAN + str(test_loss_position_epoch)[:8] + RESET)
+    print(GREEN + current_time + RESET,'| Epoch:', step, ' |', YELLOW + ' Collision' + RESET, ' test loss:         ', CYAN + str(test_loss_collision_epoch)[:8] + RESET)
     
     if loss < 0.05 or step>1e5:
         print('save model, break')

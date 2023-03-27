@@ -172,10 +172,10 @@ while world is not None:
         forward_velocity_applied = np.random.normal(2, 0)
         ego_vehicle.enable_constant_velocity(carla.Vector3D(x=forward_velocity_applied,y=0,z=0))
         
-        steer_applied = 0.1
+        steer_applied = 0.0
         ego_vehicle.apply_control(carla.VehicleControl(steer=steer_applied))
         
-        best_action_queue.put(torch.randn((horizon, 2)))       # put a zero array into the queue to avoid the queue is empty
+        best_action_queue.put(torch.randn((horizon, 2)))       # put a random array into the queue to avoid the queue is empty
         world.tick()
         
     else:
@@ -244,7 +244,7 @@ while world is not None:
         # actions = actions.to(torch.float32)
         
         actions = torch.zeros([N, horizon, 2])
-        steer = np.linspace(-0.5,0.5, num=N)
+        steer = np.linspace(-1.0, 1.0, num=N)
         for i in range(N):
             actions[i,:,0] = torch.tensor([2.0]*horizon) 
             actions[i,:,1] = torch.tensor([steer[i]]*horizon)
