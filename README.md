@@ -19,7 +19,7 @@
   <a href="#Contents">Contents</a> 
 </p>
 
-![screenshot](https://auto.aicurious.io/autonomous.gif)
+![screenshot](https://github.com/leishi23/Rough_terrain_vehicle_control/blob/master/demo_carla.gif?raw=true)
 
 ## Key Features
 
